@@ -1,81 +1,58 @@
-OBJECTIVE
+INVESTIGATING CLIENT IP VISIBILTY IN DOCKER DESKTOP
 
-To host a static HTML page using Docker and Nginx and restrict access so that only a specific IP address can access the website.
+While implementing IP-based access control using Nginx, I noticed that both my MacBook and iPhone received a 403 Forbidden response even though the iPhone IP address was explicitly allowed.
 
-STRUCTURE
+Instead of assuming there was a configuration error, I decided to investigate what IP address the Nginx container was actually seeing.
 
-allowip/
--Dockerfile
--nginx.conf
--index.html
+TEMPORARY CONFIGURATION
 
-DOCKERFILE
-
-FROM nginx
-
-COPY index.html /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-This uses original nginx image from DockerHub, copies the html file into nginx's web root and replaces nginx's default configuration with the custom nginx.conf configuration.
-
-NGINX.CONF
-
+I temporarily replaced the original configuration with:
 server {
     listen 80;
     location / {
-        allow 192.xxx.x.xx;
-        deny all;
-        root /usr/share/nginx/html;
-        index index.html;
+        default_type text/plain;
+        return 200 "$remote_addr\n";
     }
 }
 
-* listen 80 → nginx listens on port 80.
-* allow 192.xxx.x.xx → only the specified IP is allowed.
-* deny all → all other IPs receive a 403 Forbidden response.
-* root /usr/share/nginx/html → location of website files.
-* index index.html → default page.
+This returns the client IP address seen by Nginx.
 
-BUILD IMAGE
+TEST SETUP
 
-docker build -t allowipimage .
+Actual device IP addresses:
+iPhone  : 192.xxx.x.xx
+MacBook : 192.xxx.x.xx
 
-RUN CONTAINER
+WEBSITE ACCESS
 
-docker run -d --name allowcontainer -p 8080:80 allowipimage
+iPhone  → http://MacbookIP:8080
+MacBook → http://localhost:8080
 
-VISIT
+OBSERVATION
 
-http://localhost:8080
+Surprisingly, both devices produced the same output:
 
-EXPECTED BEHAVIOUR
-
-* Allowed IP → Website loads.
-* Other IP addresses → HTTP 403 Forbidden
-
-OBSERVATION ON DOCKER DESKTOP FOR MAC
-
-While testing, I observed that both my Mac and iPhone received a 403 response even though the iPhone IP was explicitly allowed.
-
-This happens because Docker Desktop on macOS runs Linux containers inside a lightweight Linux virtual machine and performs network address translation (NAT). As a result, nginx inside the container may not see the original client IP address but instead sees traffic originating from Docker’s internal network.
-
-Therefore, IP-based access control inside the container may behave differently on Docker Desktop for Mac compared to native Linux environments.
-
-CONCEPTS LEARNED
-
-* Docker images and containers
-* Dockerfile
-* Port mapping
-* Nginx web root
-* Nginx configuration files
-* allow and deny directives
-* HTTP 403 Forbidden
-* Docker Desktop networking
-* Network Address Translation (NAT)
-* Debugging containerized applications
-* Difference between macOS Docker Desktop and native Linux containers
+192.xxx.xx.x
+(An IP that is different from both my iPhone IP and MacBook IP)
+Even though the devices had different IP addresses, the Nginx container could only see Docker’s internal network address.
 
 CONCLUSION
 
-This project demonstrates how nginx access control can be configured inside Docker and highlights how Docker Desktop networking on macOS affects client IP visibility. The same configuration would work normally on native Linux environments.
+Docker Desktop for macOS runs Linux containers inside a lightweight Linux virtual machine and performs Network Address Translation (NAT).
 
+Because of this, both my MacBook and iPhone appeared to the Nginx container as:
+192.xxx.xx.x (IP printed when I did http://localhost:8080 in MacBook and http://MacbookIP:8080 in iPhone)
+As a result, IP-based filtering inside the container could not distinguish between the two devices.
+
+CONCEPTS EXPLORED
+
+* Docker Desktop networking
+* Nginx $remote_addr
+* Client IP visibility
+* Network Address Translation (NAT)
+* Container debugging
+* Docker internal networking
+
+--KEY TAKEAWAY--
+
+The issue was not caused by an incorrect Nginx configuration. The experiment showed that Docker Desktop on macOS hides the original client IP addresses from containers, causing multiple devices to appear as the same internal address.
