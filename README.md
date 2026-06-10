@@ -20,8 +20,8 @@ This returns the client IP address seen by Nginx.
 TEST SETUP
 
 Actual device IP addresses:
-iPhone  : 192.xxx.x.xx
-MacBook : 192.xxx.x.xx
+iPhone  : 10.10.10.30
+MacBook : 10.10.10.20
 
 WEBSITE ACCESS
 
@@ -32,7 +32,7 @@ OBSERVATION
 
 Surprisingly, both devices produced the same output:
 
-192.xxx.xx.x
+172.30.0.1
 (An IP that is different from both my iPhone IP and MacBook IP)
 Even though the devices had different IP addresses, the Nginx container could only see Docker’s internal network address.
 
@@ -41,7 +41,7 @@ CONCLUSION
 Docker Desktop for macOS runs Linux containers inside a lightweight Linux virtual machine and performs Network Address Translation (NAT).
 
 Because of this, both my MacBook and iPhone appeared to the Nginx container as:
-192.xxx.xx.x (IP printed when I did http://localhost:8080 in MacBook and http://MacbookIP:8080 in iPhone)
+172.30.0.1 (IP printed when I did http://localhost:8080 in MacBook and http://MacbookIP:8080 in iPhone)
 As a result, IP-based filtering inside the container could not distinguish between the two devices.
 
 CONCEPTS EXPLORED
