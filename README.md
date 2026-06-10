@@ -23,7 +23,7 @@ NGINX.CONF
 server {
     listen 80;
     location / {
-        allow 192.xxx.x.xx;
+        allow 10.10.10.30;
         deny all;
         root /usr/share/nginx/html;
         index index.html;
@@ -31,7 +31,7 @@ server {
 }
 
 * listen 80 → nginx listens on port 80.
-* allow 192.xxx.x.xx → only the specified IP is allowed.
+* allow 10.10.10.30 → only the specified IP is allowed.
 * deny all → all other IPs receive a 403 Forbidden response.
 * root /usr/share/nginx/html → location of website files.
 * index index.html → default page.
