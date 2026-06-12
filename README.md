@@ -43,7 +43,7 @@ This configuration returns the client IP address seen by nginx.
 ### From iPhone
 
 ```text
-http://10.10.10.20:8080
+http://10.10.10.30:8080
 ```
 
 ### From MacBook
