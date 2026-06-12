@@ -1,81 +1,342 @@
-OBJECTIVE
+# Docker + Nginx IP Restriction Lab
 
-To host a static HTML page using Docker and Nginx and restrict access so that only a specific IP address can access the website.
+## Objective
 
-STRUCTURE
+The goal of this project was to host a custom HTML page inside an nginx container and restrict access to only specific devices using IP-based access control.
 
-allowip/
--Dockerfile
--nginx.conf
--index.html
+This experiment was also used to understand how Docker Desktop on macOS differs from Docker running natively on Linux and how Network Address Translation (NAT) affects client IP visibility.
 
-DOCKERFILE
+---
 
+## Technologies Used
+
+- Docker
+- nginx
+- Dockerfile
+- Ubuntu
+- Kali Linux
+- UTM Virtual Machine
+- Bridged Networking
+- Docker Desktop for macOS
+
+---
+
+# Project Structure
+
+```
+.
+├── Dockerfile
+├── nginx.conf
+└── index.html
+```
+
+---
+
+# Dockerfile
+
+```dockerfile
 FROM nginx
 
 COPY index.html /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+```
 
-This uses original nginx image from DockerHub, copies the html file into nginx's web root and replaces nginx's default configuration with the custom nginx.conf configuration.
+The image is built from the official nginx image.
 
-NGINX.CONF
+The custom HTML page is copied to nginx's web root and the default nginx configuration is replaced with a custom configuration.
 
+---
+
+# nginx Configuration
+
+Example:
+
+```nginx
 server {
     listen 80;
+
     location / {
-        allow 10.10.10.30;
+
+        allow PHONE_IP;
         deny all;
+
         root /usr/share/nginx/html;
         index index.html;
     }
 }
+```
 
-* listen 80 → nginx listens on port 80.
-* allow 10.10.10.30 → only the specified IP is allowed.
-* deny all → all other IPs receive a 403 Forbidden response.
-* root /usr/share/nginx/html → location of website files.
-* index index.html → default page.
+This configuration allows only the specified IP address and blocks every other client.
 
-BUILD IMAGE
+---
 
-docker build -t allowipimage .
+# Initial Experiment: Docker Desktop on macOS
 
-RUN CONTAINER
+## Setup
 
-docker run -d --name allowcontainer -p 8080:80 allowipimage
+```
+Phone
+MacBook
+     ↓
+Docker Desktop
+     ↓
+Linux VM
+     ↓
+nginx container
+```
 
-VISIT
+Docker Desktop on macOS runs Linux containers inside a lightweight Linux virtual machine.
 
-http://localhost:8080
+Because containers require a Linux kernel, Docker Desktop creates a hidden Linux VM and runs Docker Engine inside it.
 
-EXPECTED BEHAVIOUR
+---
 
-* Allowed IP → Website loads.
-* Other IP addresses → HTTP 403 Forbidden
+# Unexpected Result
 
-OBSERVATION ON DOCKER DESKTOP FOR MAC
+Both the MacBook and the phone received:
 
-While testing, I observed that both my Mac and iPhone received a 403 response even though the iPhone IP was explicitly allowed.
+```
+403 Forbidden
+```
 
-This happens because Docker Desktop on macOS runs Linux containers inside a lightweight Linux virtual machine and performs network address translation (NAT). As a result, nginx inside the container may not see the original client IP address but instead sees traffic originating from Docker’s internal network.
+even though only one device was allowed.
 
-Therefore, IP-based access control inside the container may behave differently on Docker Desktop for Mac compared to native Linux environments.
+---
 
-CONCEPTS LEARNED
+# Debugging Using `$remote_addr`
 
-* Docker images and containers
-* Dockerfile
-* Port mapping
-* Nginx web root
-* Nginx configuration files
-* allow and deny directives
-* HTTP 403 Forbidden
-* Docker Desktop networking
-* Network Address Translation (NAT)
-* Debugging containerized applications
-* Difference between macOS Docker Desktop and native Linux containers
+To understand what nginx was seeing, the configuration was temporarily changed to:
 
-CONCLUSION
+```nginx
+location / {
+    default_type text/plain;
+    return 200 "$remote_addr\n";
+}
+```
 
-This project demonstrates how nginx access control can be configured inside Docker and highlights how Docker Desktop networking on macOS affects client IP visibility. The same configuration would work normally on native Linux environments.
+Surprisingly, both devices printed:
 
+```
+10.10.10.50
+```
+
+instead of their real WiFi addresses.
+
+---
+
+# Understanding NAT
+
+Docker Desktop introduces an additional network layer:
+
+```
+Phone (10.10.10.20)
+MacBook (10.10.10.30)
+            ↓
+      Docker Desktop
+            ↓
+      Linux VM
+       (10.10.10.50)
+            ↓
+      nginx container
+```
+
+Traffic entering the Linux VM is translated by Docker Desktop.
+
+As a result, nginx sees all requests as coming from:
+
+```
+10.10.10.50
+```
+
+instead of the original client addresses.
+
+Therefore, IP-based filtering becomes ineffective because multiple devices appear to have the same IP.
+
+---
+
+# Second Experiment: Ubuntu VM using NAT
+
+Setup:
+
+```
+Mac
+ ↓
+UTM NAT
+ ↓
+Ubuntu
+ ↓
+Docker
+ ↓
+nginx
+```
+
+Result:
+
+IP restriction failed again.
+
+Reason:
+
+NAT translated client addresses before they reached nginx.
+
+---
+
+# Final Experiment: Bridged Networking
+
+## Setup
+
+```
+Phone
+MacBook
+Kali Linux
+      ↓
+Ubuntu VM (Bridged)
+      ↓
+Docker
+      ↓
+nginx
+```
+
+In bridged mode, the Ubuntu VM becomes another device on the physical network.
+
+Docker runs natively inside Linux and no additional VM layer exists between Docker and the operating system.
+
+This allows nginx to see the original client IP addresses.
+
+---
+
+# Results
+
+Allowed phone (IP:10.10.10.20):
+
+```
+Custom HTML page displayed successfully
+```
+
+Second phone:
+
+```
+403 Forbidden
+```
+
+Kali Linux:
+
+```
+403 Forbidden
+```
+
+MacBook:
+
+```
+403 Forbidden
+```
+
+Ubuntu:
+
+```
+Access allowed
+```
+
+This proved that nginx IP restriction works correctly when the original client IP addresses are preserved.
+
+---
+
+# Why Docker Desktop Failed
+
+Docker Desktop does not run containers directly on macOS.
+
+Instead:
+
+```
+macOS
+ ↓
+Hidden Linux VM
+ ↓
+Docker Engine
+ ↓
+Container
+```
+
+The Linux VM is isolated from the physical network and Docker Desktop acts as a router between the host and the VM.
+
+To forward traffic between these two networks, Docker Desktop performs Network Address Translation (NAT).
+
+NAT rewrites source IP addresses, causing nginx to lose visibility of the original client.
+
+---
+
+# Native Linux vs Docker Desktop
+
+## Native Linux
+
+```
+Phone
+ ↓
+Ubuntu
+ ↓
+Docker
+ ↓
+Container
+```
+
+nginx sees:
+
+```
+10.10.10.20
+```
+
+and IP restriction works by allowing only the phone with the above IP.
+
+---
+
+## Docker Desktop
+
+```
+Phone
+ ↓
+macOS
+ ↓
+Docker Desktop
+ ↓
+Linux VM
+ ↓
+Container
+```
+
+nginx sees:
+
+```
+10.10.10.50
+```
+
+for multiple devices.
+
+---
+
+# Important Concepts Learned
+
+- Containers require a Linux kernel.
+- Docker Desktop creates a lightweight Linux VM on macOS.
+- Docker Desktop performs NAT between macOS and the Linux VM.
+- NAT hides original client IP addresses.
+- nginx `allow` and `deny` depend on the client IP seen by nginx.
+- `$remote_addr` is useful for debugging IP-related issues.
+- Bridged networking preserves real client IP addresses.
+- Docker running natively on Linux behaves differently from Docker Desktop.
+
+---
+
+# Conclusion
+
+IP-based access control using nginx works correctly inside Docker containers when the original client IP addresses are preserved.
+
+Docker Desktop on macOS hides client IPs because traffic passes through a hidden Linux VM and undergoes Network Address Translation (NAT).
+
+Using bridged networking and Docker running natively on Linux preserves the original client IP addresses and allows nginx access control rules to function as expected.
+
+---
+
+## Key Takeaway
+
+The issue was not caused by nginx, Docker, or the configuration itself.
+
+The root cause was the loss of client IP visibility introduced by NAT.
