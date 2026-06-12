@@ -1,81 +1,139 @@
-OBJECTIVE
+# Docker + Nginx IP Restriction
+
+## Objective
 
 To host a static HTML page using Docker and Nginx and restrict access so that only a specific IP address can access the website.
 
-STRUCTURE
+---
 
+## Project Structure
+
+```text
 allowip/
--Dockerfile
--nginx.conf
--index.html
+├── Dockerfile
+├── nginx.conf
+└── index.html
+```
 
-DOCKERFILE
+---
 
+## Dockerfile
+
+```dockerfile
 FROM nginx
 
 COPY index.html /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+```
 
-This uses original nginx image from DockerHub, copies the html file into nginx's web root and replaces nginx's default configuration with the custom nginx.conf configuration.
+This uses the official nginx image from Docker Hub, copies the HTML file into nginx's web root, and replaces nginx's default configuration with a custom configuration.
 
-NGINX.CONF
+---
 
+## nginx.conf
+
+```nginx
 server {
     listen 80;
+
     location / {
-        allow 10.10.10.30;
+        allow 10.10.10.20;
         deny all;
+
         root /usr/share/nginx/html;
         index index.html;
     }
 }
+```
 
-* listen 80 → nginx listens on port 80.
-* allow 10.10.10.30 → only the specified IP is allowed.
-* deny all → all other IPs receive a 403 Forbidden response.
-* root /usr/share/nginx/html → location of website files.
-* index index.html → default page.
+### Explanation
 
-BUILD IMAGE
+- `listen 80` → nginx listens on port 80.
+- `allow 10.10.10.20` → only the specified IP address is allowed.
+- `deny all` → all other clients receive an HTTP 403 Forbidden response.
+- `root /usr/share/nginx/html` → location of website files.
+- `index index.html` → default page served by nginx.
 
+---
+
+## Build Image
+
+```bash
 docker build -t allowipimage .
+```
 
-RUN CONTAINER
+---
 
+## Run Container
+
+```bash
 docker run -d --name allowcontainer -p 8080:80 allowipimage
+```
 
-VISIT
+---
 
+## Access Website
+
+Open:
+
+```text
 http://localhost:8080
+```
 
-EXPECTED BEHAVIOUR
+---
 
-* Allowed IP → Website loads.
-* Other IP addresses → HTTP 403 Forbidden
+## Expected Behaviour
 
-OBSERVATION ON DOCKER DESKTOP FOR MAC
+| Client | Result |
+|----------|--------|
+| Allowed IP | Website loads |
+| Other IP addresses | HTTP 403 Forbidden |
 
-While testing, I observed that both my Mac and iPhone received a 403 response even though the iPhone IP was explicitly allowed.
+---
 
-This happens because Docker Desktop on macOS runs Linux containers inside a lightweight Linux virtual machine and performs network address translation (NAT). As a result, nginx inside the container may not see the original client IP address but instead sees traffic originating from Docker’s internal network.
+# Observation on Docker Desktop for macOS
 
-Therefore, IP-based access control inside the container may behave differently on Docker Desktop for Mac compared to native Linux environments.
+While testing, both the MacBook and the iPhone received a **403 Forbidden** response even though the iPhone IP was explicitly allowed.
 
-CONCEPTS LEARNED
+To investigate this, the nginx configuration was temporarily modified to return the client IP address:
 
-* Docker images and containers
-* Dockerfile
-* Port mapping
-* Nginx web root
-* Nginx configuration files
-* allow and deny directives
-* HTTP 403 Forbidden
-* Docker Desktop networking
-* Network Address Translation (NAT)
-* Debugging containerized applications
-* Difference between macOS Docker Desktop and native Linux containers
+```nginx
+location / {
+    default_type text/plain;
+    return 200 "$remote_addr\n";
+}
+```
 
-CONCLUSION
+Surprisingly, nginx displayed the same internal address for requests originating from both devices.
 
-This project demonstrates how nginx access control can be configured inside Docker and highlights how Docker Desktop networking on macOS affects client IP visibility. The same configuration would work normally on native Linux environments.
+This happens because Docker Desktop on macOS runs Linux containers inside a lightweight Linux virtual machine and performs **Network Address Translation (NAT)**. As a result, nginx inside the container does not always see the original client IP address but instead sees traffic originating from Docker Desktop's internal network.
 
+Therefore, IP-based access control inside containers may behave differently on Docker Desktop compared to native Linux environments.
+
+---
+
+## Concepts Learned
+
+- Docker images and containers
+- Dockerfile
+- Port mapping
+- nginx web root
+- nginx configuration files
+- `allow` and `deny` directives
+- HTTP 403 Forbidden
+- Docker Desktop networking
+- Network Address Translation (NAT)
+- Debugging containerized applications
+- Client IP visibility
+- Using `$remote_addr` for troubleshooting
+- Difference between Docker Desktop on macOS and Docker running natively on Linux
+
+---
+
+## Conclusion
+
+This project demonstrates how nginx access control can be configured inside Docker and highlights how Docker Desktop networking on macOS affects client IP visibility.
+
+Although the configuration itself is correct, Docker Desktop's use of a lightweight Linux virtual machine and Network Address Translation (NAT) causes multiple clients to appear as the same internal address from the container's perspective.
+
+The same configuration is expected to work normally on native Linux environments where the original client IP addresses are preserved.
